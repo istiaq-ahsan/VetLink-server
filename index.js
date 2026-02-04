@@ -2,7 +2,7 @@ const dns = require("dns");
 const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 dotenv.config();
 dns.setServers(["8.8.8.8", "1.1.1.1"]);
@@ -32,13 +32,16 @@ async function run() {
 
     const db = client.db("vetlink-db");
     const bookingCollection = db.collection("bookings");
+    const usersCollection = db.collection("users");
 
     app.get("/bookings", async (req, res) => {
       try {
-        const bookings = await bookingCollection
-          .find({})
-          .sort({ createdAt: -1 })
-          .toArray();
+        const email = req.query.userEmail;
+        const query = email ? { created_by: email } : {};
+        const options = {
+          sort: { createdAt: -1 },
+        };
+        const bookings = await bookingCollection.find(query, options).toArray();
 
         res.send(bookings);
       } catch (error) {
@@ -59,6 +62,53 @@ async function run() {
       } catch (error) {
         res.status(500).send({ message: "Failed to create booking", error });
       }
+    });
+
+    //delete a booking by id
+    app.delete("/bookings/:id", async (req, res) => {
+      const id = req.params.id;
+
+      try {
+        const result = await bookingCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
+
+        res.send(result);
+      } catch (err) {
+        console.error("Failed to delete booking:", err);
+        return res.status(500).json({ message: "Server error" });
+      }
+    });
+
+    // 1️⃣ GET all users or a specific user by email
+    app.get("/users", async (req, res) => {
+      try {
+        const email = req.query.email;
+        const query = email ? { email } : {};
+        const options = {
+          sort: { createdAt: -1 }, // optional sorting by creation date
+        };
+        const users = await usersCollection.find(query, options).toArray();
+        res.send(users);
+      } catch (error) {
+        res.status(500).send({ message: "Failed to fetch users", error });
+      }
+    });
+
+    // users related apis
+    app.post("/users", async (req, res) => {
+      const user = req.body;
+      user.role = "user";
+      user.createdAt = new Date();
+      const email = user.email;
+      const userExists = await usersCollection.findOne({ email });
+
+      if (userExists) {
+        return res.send({ message: "user exists" });
+      }
+
+      const result = await usersCollection.insertOne(user);
+      res.send(result);
     });
 
     // Send a ping to confirm a successful connection
